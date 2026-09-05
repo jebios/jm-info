@@ -192,6 +192,7 @@
   <div class="header-btns">
     <button class="btn amber sm" onclick="instalarApp()" title="Instalar como aplicativo no celular ou computador">⬇ Instalar App</button>
     <button class="btn sec sm" onclick="toggleMobile()" id="btn-mobile" title="Alternar entre visualização de celular e computador">📱 Modo Celular</button>
+    <button class="btn sec sm" onclick="menuCalculadoraParcelas()" title="Calcular valor com juros por forma de parcelamento">🧮 Calculadora</button>
     <button class="btn sec sm" onclick="go('config')" title="Dados da empresa, logomarca e PIX">⚙ Config</button>
     <button class="btn sec sm" onclick="menuNuvem()" title="Sincronização automática entre aparelhos">☁ Nuvem <span id="nuvem-status" style="font-size:11px"></span></button>
     <button class="btn sec sm" onclick="menuDrive()" title="Backup manual em arquivo">💾 Backup</button>
@@ -1063,6 +1064,47 @@ function calcularTaxaPagamento(valorBase, forma, parcelas){
   const jurosValor = Math.round(valorBase*(pct/100)*100)/100;
   return { pct, jurosValor, comJuros: Math.round((valorBase+jurosValor)*100)/100 };
 }
+
+/* ================= CALCULADORA DE PARCELAS ================= */
+function menuCalculadoraParcelas(){
+  openModal(`<h3>🧮 Calculadora de parcelas com juros</h3>
+  <p class="hint" style="margin-bottom:10px">Digite o valor do serviço e veja quanto cobrar em cada forma de pagamento, já com o juro somado (usa as taxas configuradas em ⚙ Config).</p>
+  <label>Valor do serviço (R$) *</label>
+  <input id="calc-valor" type="number" min="0" step="0.01" placeholder="0,00" oninput="calcularParcelasTela()" autofocus>
+  <div id="calc-resultado" style="margin-top:14px"></div>
+  <div class="actions"><button class="btn" onclick="closeModal()">Fechar</button></div>`);
+  setTimeout(()=>document.getElementById('calc-valor')?.focus(), 100);
+}
+function calcularParcelasTela(){
+  const valor = Number(document.getElementById('calc-valor')?.value)||0;
+  const box = document.getElementById('calc-resultado');
+  if(!box) return;
+  if(valor<=0){ box.innerHTML=''; return; }
+
+  const pix = calcularTaxaPagamento(valor,'Pix',null);
+  const debito = calcularTaxaPagamento(valor,'Cartão de débito',null);
+
+  let html = `<div style="background:var(--gray-soft);border-radius:8px;padding:10px;margin-bottom:10px">
+    <div class="detail-line" style="border:none"><b>💵 À vista (Pix/Dinheiro)</b><span style="font-weight:800">${fmt(pix.comJuros)}</span></div>
+    <div class="detail-line" style="border:none"><b>💳 Cartão de débito</b><span style="font-weight:800">${fmt(debito.comJuros)} <span class="hint">(+${debito.pct.toFixed(2)}%)</span></span></div>
+  </div>
+  <table><thead><tr><th>Parcelas</th><th class="right">Juro</th><th class="right">Cobrar do cliente</th><th class="right">Valor de cada parcela</th></tr></thead><tbody>
+  ${Array.from({length:12},(_,i)=>{
+    const n = i+1;
+    const r = calcularTaxaPagamento(valor,'Cartão de crédito', n);
+    const porParcela = Math.round((r.comJuros/n)*100)/100;
+    return `<tr>
+      <td><b>${n}x</b></td>
+      <td class="right">${r.pct.toFixed(2)}%</td>
+      <td class="right" style="font-weight:700">${fmt(r.comJuros)}</td>
+      <td class="right">${n}x de ${fmt(porParcela)}</td>
+    </tr>`;
+  }).join('')}
+  </tbody></table>
+  <p class="hint" style="margin-top:8px">O juro é somado ao valor do serviço — o cliente paga a mais, você recebe o valor cheio.</p>`;
+  box.innerHTML = html;
+}
+
 // Endereço completo montado: rua - bairro, cidade/UF
 function enderecoCompleto(c){
   c = c || DB.config || {};
