@@ -1693,6 +1693,7 @@ function formOS(id, preCliente){
     <div><label>Cliente *</label>
       <div class="row" style="flex-wrap:nowrap;position:relative">
         <input id="f-ocli-busca" style="flex:1" placeholder="Digite o nome, telefone ou CNPJ…" value="${cliSel?esc(cli(cliSel)?.nome||''):''}" oninput="buscarClienteVivo()" onfocus="buscarClienteVivo()" autocomplete="off">
+        <button class="btn sec sm" type="button" title="Pesquisar na lista de clientes" onclick="abrirPesquisaClientesOS()">🔍 Pesquisar</button>
         <button class="btn sec sm" type="button" title="Cadastrar novo cliente" onclick="toggleQuick('quick-cli')">+ Novo</button>
         <div id="cli-resultados" class="autocomplete-lista" style="display:none"></div>
       </div>
@@ -1909,6 +1910,25 @@ function selecionarCliente(id){
   if(hint) hint.textContent = c.telefone ? '📞 '+c.telefone : '';
   fillEquipSelect(c.id);
   atualizarPermutaCredito('f');
+}
+// Abre a lista completa de clientes para escolher (sem precisar digitar) — usado pelo botão "🔍 Pesquisar"
+function abrirPesquisaClientesOS(){
+  const inp = document.getElementById('f-ocli-busca');
+  const box = document.getElementById('cli-resultados');
+  if(!box) return;
+  if(inp) inp.focus();
+  const lista = [...DB.clientes].sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  if(!lista.length){
+    box.innerHTML = `<div class="autocomplete-vazio">Nenhum cliente cadastrado ainda.<br>Use "+ Novo" para cadastrar.</div>`;
+  } else {
+    box.innerHTML = lista.map(c=>{
+      const sub = [c.telefone, c.doc].filter(Boolean).join(' · ');
+      return `<div class="autocomplete-item" onclick="selecionarCliente('${c.id}')">
+        <b>${esc(c.nome)}</b>${sub?`<div class="sub">${esc(sub)}</div>`:''}
+      </div>`;
+    }).join('');
+  }
+  box.style.display = 'block';
 }
 // fecha a lista ao clicar fora
 document.addEventListener('click', e=>{
