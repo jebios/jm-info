@@ -1911,30 +1911,65 @@ function selecionarCliente(id){
   fillEquipSelect(c.id);
   atualizarPermutaCredito('f');
 }
-// Abre a lista completa de clientes para escolher (sem precisar digitar) — usado pelo botão "🔍 Pesquisar"
+// Abre uma JANELA (por cima do formulário da OS, sem fechá-lo) com todos os clientes para escolher
 function abrirPesquisaClientesOS(){
-  const inp = document.getElementById('f-ocli-busca');
-  const box = document.getElementById('cli-resultados');
-  if(!box) return;
-  if(inp) inp.focus();
-  const lista = [...DB.clientes].sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
-  if(!lista.length){
-    box.innerHTML = `<div class="autocomplete-vazio">Nenhum cliente cadastrado ainda.<br>Use "+ Novo" para cadastrar.</div>`;
-  } else {
-    box.innerHTML = lista.map(c=>{
-      const sub = [c.telefone, c.doc].filter(Boolean).join(' · ');
-      return `<div class="autocomplete-item" onclick="selecionarCliente('${c.id}')">
-        <b>${esc(c.nome)}</b>${sub?`<div class="sub">${esc(sub)}</div>`:''}
-      </div>`;
-    }).join('');
+  let win = document.getElementById('janela-clientes');
+  if(!win){
+    win = document.createElement('div');
+    win.id = 'janela-clientes';
+    win.style.cssText = 'position:fixed;inset:0;background:rgba(10,20,30,.6);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:30px 14px;overflow:auto';
+    win.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:520px;width:100%;padding:20px;max-height:calc(100vh - 60px);overflow-y:auto">
+      <h3 style="color:var(--navy);margin-bottom:12px">🔍 Selecionar Cliente</h3>
+      <input id="jc-busca" placeholder="Buscar por nome, telefone ou CNPJ…" oninput="filtrarJanelaClientes()" autocomplete="off" style="margin-bottom:10px">
+      <div id="jc-lista"></div>
+      <div class="actions"><button class="btn sec" type="button" onclick="fecharJanelaClientes()">Fechar</button></div>
+    </div>`;
+    document.body.appendChild(win);
+    win.addEventListener('click', e=>{ if(e.target===win) fecharJanelaClientes(); });
   }
-  box.style.display = 'block';
+  win.style.display = 'flex';
+  const busca = document.getElementById('jc-busca');
+  if(busca) busca.value = '';
+  renderJanelaClientes(DB.clientes);
+  setTimeout(()=>document.getElementById('jc-busca')?.focus(), 50);
 }
-// fecha a lista ao clicar fora
+function filtrarJanelaClientes(){
+  const q = (document.getElementById('jc-busca')?.value||'').toLowerCase().trim();
+  const soDig = q.replace(/\D/g,'');
+  const lista = DB.clientes.filter(c=>{
+    if(!q) return true;
+    const nome = (c.nome||'').toLowerCase();
+    const tel = (c.telefone||'').replace(/\D/g,'');
+    const doc = (c.doc||'').replace(/\D/g,'');
+    return nome.includes(q) || (soDig && (tel.includes(soDig) || doc.includes(soDig)));
+  });
+  renderJanelaClientes(lista);
+}
+function renderJanelaClientes(lista){
+  const box = document.getElementById('jc-lista');
+  if(!box) return;
+  const ordenada = [...lista].sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  box.innerHTML = ordenada.length ? ordenada.map(c=>{
+    const sub = [c.telefone, c.doc].filter(Boolean).join(' · ');
+    return `<div class="autocomplete-item" style="border-radius:8px;margin-bottom:4px" onclick="selecionarClienteJanela('${c.id}')">
+      <b>${esc(c.nome)}</b>${sub?`<div class="sub">${esc(sub)}</div>`:''}
+    </div>`;
+  }).join('') : '<div class="autocomplete-vazio">Nenhum cliente encontrado.<br>Use "+ Novo" para cadastrar.</div>';
+}
+function selecionarClienteJanela(id){
+  selecionarCliente(id);
+  fecharJanelaClientes();
+}
+function fecharJanelaClientes(){
+  const win = document.getElementById('janela-clientes');
+  if(win) win.style.display = 'none';
+}
+// fecha a lista de sugestões (busca ao digitar) ao clicar fora dela — sem fechar por causa dos botões vizinhos
 document.addEventListener('click', e=>{
   const box = document.getElementById('cli-resultados');
-  const inp = document.getElementById('f-ocli-busca');
-  if(box && inp && !box.contains(e.target) && e.target!==inp){ box.style.display='none'; }
+  if(!box) return;
+  const wrapper = box.parentElement; // linha que contém o campo, os botões e a lista
+  if(wrapper && !wrapper.contains(e.target)){ box.style.display='none'; }
 });
 function fillEquipSelect(clienteId, sel){
   const eqs = DB.equipamentos.filter(e=>e.clienteId===clienteId);
