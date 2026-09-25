@@ -874,6 +874,14 @@ function go(t){
 function render(){
   updateBrand();
   const app = document.getElementById('app');
+  // guarda qual campo estava com foco (e a posição do cursor) antes de redesenhar,
+  // para não perder o foco a cada letra digitada nas buscas
+  const ativo = document.activeElement;
+  let focoId = null, selStart = null, selEnd = null;
+  if(ativo && app.contains(ativo) && ativo.id){
+    focoId = ativo.id;
+    if(typeof ativo.selectionStart === 'number'){ selStart = ativo.selectionStart; selEnd = ativo.selectionEnd; }
+  }
   if(tab==='dashboard') app.innerHTML = vDashboard();
   if(tab==='os') app.innerHTML = vOS();
   if(tab==='clientes') app.innerHTML = vClientes();
@@ -885,6 +893,16 @@ function render(){
   if(tab==='garantia') app.innerHTML = vGarantia();
   if(tab==='config'){ app.innerHTML = vConfig(); setTimeout(previewQR, 50); }
   aplicarCorretor(app);
+  // devolve o foco e o cursor para o mesmo campo, no mesmo lugar onde estava
+  if(focoId){
+    const el = document.getElementById(focoId);
+    if(el){
+      el.focus();
+      if(selStart!==null && typeof el.setSelectionRange === 'function'){
+        try{ el.setSelectionRange(selStart, selEnd); }catch(e){}
+      }
+    }
+  }
 }
 // Ativa a correção automática do celular/navegador nos campos de texto.
 // Campos técnicos (e-mail, PIX, CNPJ, números) NÃO recebem correção para não atrapalhar.
@@ -1260,7 +1278,7 @@ function vClientes(){
   const list = DB.clientes.filter(c=>!q || c.nome.toLowerCase().includes(q) || (c.telefone||'').includes(q));
   return `
   <div class="spread">
-    <input class="search" placeholder="🔍 Buscar cliente por nome ou telefone…" value="${esc(window._qc||'')}" oninput="window._qc=this.value;render()">
+    <input id="busca-clientes" class="search" placeholder="🔍 Buscar cliente por nome ou telefone…" value="${esc(window._qc||'')}" oninput="window._qc=this.value;render()">
     <div class="row">
       <button class="btn sec" onclick="importarClientes()">📥 Importar planilha</button>
       <button class="btn" onclick="formCliente()">+ Novo Cliente</button>
@@ -1449,7 +1467,7 @@ function vEquip(){
   });
   return `
   <div class="spread">
-    <input class="search" placeholder="🔍 Buscar por tipo, marca, série ou cliente…" value="${esc(window._qe||'')}" oninput="window._qe=this.value;render()">
+    <input id="busca-equip" class="search" placeholder="🔍 Buscar por tipo, marca, série ou cliente…" value="${esc(window._qe||'')}" oninput="window._qe=this.value;render()">
     <button class="btn" onclick="formEquip()">+ Novo Equipamento</button>
   </div>
   <div class="card">
@@ -1517,7 +1535,7 @@ function vEstoque(){
   const totVenda = list.reduce((s,p)=>s+Number(p.qtd)*Number(p.venda),0);
   return `
   <div class="spread">
-    <input class="search" placeholder="🔍 Buscar produto…" value="${esc(window._qp||'')}" oninput="window._qp=this.value;render()">
+    <input id="busca-produto" class="search" placeholder="🔍 Buscar produto…" value="${esc(window._qp||'')}" oninput="window._qp=this.value;render()">
     <button class="btn" onclick="formProd()">+ Novo Produto</button>
   </div>
   <div class="grid g3" style="margin-bottom:16px">
@@ -1592,7 +1610,7 @@ function vServicos(){
   const list = (DB.servicos||[]).filter(s=>!q || s.nome.toLowerCase().includes(q));
   return `
   <div class="spread">
-    <input class="search" placeholder="🔍 Buscar serviço…" value="${esc(window._qs||'')}" oninput="window._qs=this.value;render()">
+    <input id="busca-servico" class="search" placeholder="🔍 Buscar serviço…" value="${esc(window._qs||'')}" oninput="window._qs=this.value;render()">
     <button class="btn" onclick="formServico()">+ Novo Serviço</button>
   </div>
   <div class="card">
@@ -1670,7 +1688,7 @@ function vOS(){
   return `
   <div class="spread">
     <div class="row">
-      <input class="search" placeholder="🔍 Nº da OS, cliente, defeito…" value="${esc(window._qo||'')}" oninput="window._qo=this.value;render()">
+      <input id="busca-os" class="search" placeholder="🔍 Nº da OS, cliente, defeito…" value="${esc(window._qo||'')}" oninput="window._qo=this.value;render()">
       <select style="width:auto" onchange="window._fos=this.value;render()">
         ${['todas','Aberta','Em andamento','Aguardando peça','Concluída','Entregue','Desistência','Não tem conserto'].map(s=>`<option ${fs===s?'selected':''}>${s}</option>`).join('')}
       </select>
@@ -1691,12 +1709,14 @@ function formOS(id, preCliente){
   const cliSel = o.clienteId || preCliente || '';
   openModal(`<h3>${id ? 'Editar '+osNum(o.num) : 'Nova Ordem de Serviço'}</h3>
   <div class="grid g2">
-    <div><label>Cliente *</label>
-      <div class="row" style="flex-wrap:nowrap;position:relative">
-        <input id="f-ocli-busca" style="flex:1" placeholder="Digite o nome, telefone ou CNPJ…" value="${cliSel?esc(cli(cliSel)?.nome||''):''}" oninput="buscarClienteVivo()" onfocus="buscarClienteVivo()" autocomplete="off">
+    <div style="grid-column:1/-1"><label>Cliente *</label>
+      <div style="position:relative">
+        <input id="f-ocli-busca" style="width:100%" placeholder="Digite o nome, telefone ou CNPJ…" value="${cliSel?esc(cli(cliSel)?.nome||''):''}" oninput="buscarClienteVivo()" onfocus="buscarClienteVivo()" autocomplete="off">
+        <div id="cli-resultados" class="autocomplete-lista" style="display:none"></div>
+      </div>
+      <div class="row" style="margin-top:6px">
         <button class="btn sec sm" type="button" title="Pesquisar na lista de clientes" onclick="abrirPesquisaClientesOS()">🔍 Pesquisar</button>
         <button class="btn sec sm" type="button" title="Cadastrar novo cliente" onclick="toggleQuick('quick-cli')">+ Novo</button>
-        <div id="cli-resultados" class="autocomplete-lista" style="display:none"></div>
       </div>
       <input type="hidden" id="f-ocli" value="${cliSel||''}">
       <div class="hint" id="f-ocli-hint"></div>
@@ -3238,7 +3258,7 @@ function secAnotacoes(){
   return `
   <div class="card">
     <div class="spread" style="margin-bottom:10px">
-      <input class="search" placeholder="🔍 Buscar por nome, celular, endereço…" value="${esc(window._qag||'')}" oninput="window._qag=this.value;render()">
+      <input id="busca-agenda" class="search" placeholder="🔍 Buscar por nome, celular, endereço…" value="${esc(window._qag||'')}" oninput="window._qag=this.value;render()">
     </div>
     <h2>📒 Anotações (${lista.length})</h2>
     <p class="hint" style="margin-bottom:8px">Anotações livres — contatos, fornecedores, recados.</p>
@@ -3300,7 +3320,7 @@ function vGarantia(){
   <div class="card">
     <h2>Consultar garantia de serviço</h2>
     <p class="hint" style="margin-bottom:10px">Busque pelo número de série, marca, modelo, nome do cliente ou nº da OS para verificar se o serviço ainda está na garantia.</p>
-    <input class="search" style="max-width:460px" placeholder="🔍 Ex.: S/N ABC123, Dell, João, OS-0003…" value="${esc(window._qg||'')}" oninput="window._qg=this.value;render()">
+    <input id="busca-garantia" class="search" style="max-width:460px" placeholder="🔍 Ex.: S/N ABC123, Dell, João, OS-0003…" value="${esc(window._qg||'')}" oninput="window._qg=this.value;render()">
   </div>
 
   <div class="card">
@@ -3834,7 +3854,7 @@ function qrDataURL(payload, cb){
 /* ================= INICIALIZAÇÃO ================= */
 document.getElementById('hoje').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 // Versão do programa — serve para conferir se a versão publicada é a mais recente (evita confusão com cache)
-const VERSAO_APP = 'v12.09.26-b';
+const VERSAO_APP = 'v25.09.26-a';
 document.getElementById('versao-app').textContent = '· ' + VERSAO_APP;
 
 // Restaura preferência de visualização (só simula no PC; celular já é responsivo)
