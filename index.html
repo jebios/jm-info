@@ -1711,7 +1711,7 @@ function formOS(id, preCliente){
   <div class="grid g2">
     <div style="grid-column:1/-1"><label>Cliente *</label>
       <div style="position:relative">
-        <input id="f-ocli-busca" style="width:100%" placeholder="Digite o nome, telefone ou CNPJ…" value="${cliSel?esc(cli(cliSel)?.nome||''):''}" oninput="buscarClienteVivo()" onfocus="buscarClienteVivo()" autocomplete="off">
+        <input id="f-ocli-busca" style="width:100%" placeholder="Digite o nome, telefone ou CNPJ…" value="${cliSel?esc(cli(cliSel)?.nome||''):''}" oninput="buscarClienteVivo()" onfocus="this.removeAttribute('readonly');buscarClienteVivo()" autocomplete="off" readonly>
         <div id="cli-resultados" class="autocomplete-lista" style="display:none"></div>
       </div>
       <div class="row" style="margin-top:6px">
@@ -3854,7 +3854,7 @@ function qrDataURL(payload, cb){
 /* ================= INICIALIZAÇÃO ================= */
 document.getElementById('hoje').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 // Versão do programa — serve para conferir se a versão publicada é a mais recente (evita confusão com cache)
-const VERSAO_APP = 'v25.09.26-a';
+const VERSAO_APP = 'v02.10.26-a';
 document.getElementById('versao-app').textContent = '· ' + VERSAO_APP;
 
 // Restaura preferência de visualização (só simula no PC; celular já é responsivo)
