@@ -205,6 +205,7 @@
   <button data-tab="agenda" onclick="go('agenda')">Agenda</button>
   <button data-tab="os" onclick="go('os')">Ordens de Serviço</button>
   <button data-tab="clientes" onclick="go('clientes')">Clientes</button>
+  <button data-tab="reativar" onclick="go('reativar')">Reativar</button>
   <button data-tab="equipamentos" onclick="go('equipamentos')">Equipamentos</button>
   <button data-tab="estoque" onclick="go('estoque')">Estoque</button>
   <button data-tab="servicos" onclick="go('servicos')">Serviços</button>
@@ -885,6 +886,7 @@ function render(){
   if(tab==='dashboard') app.innerHTML = vDashboard();
   if(tab==='os') app.innerHTML = vOS();
   if(tab==='clientes') app.innerHTML = vClientes();
+  if(tab==='reativar') app.innerHTML = vReativar();
   if(tab==='equipamentos') app.innerHTML = vEquip();
   if(tab==='estoque') app.innerHTML = vEstoque();
   if(tab==='servicos') app.innerHTML = vServicos();
@@ -1456,6 +1458,166 @@ function importarClientes(){
   inp.click();
 }
 const f = id => document.getElementById(id)?.value.trim() || '';
+
+/* ================= REATIVAR CLIENTES (WhatsApp) ================= */
+const MSG_REATIVAR_PADRAO = `Olá, {nome}! 😊
+Aqui é da {empresa}. Passando para saber como está o seu {aparelho}.
+Se precisar de limpeza, formatação, manutenção ou qualquer ajuda, é só chamar! 🔧
+Se não quiser mais receber nossas mensagens, é só responder SAIR.`;
+const REATIVAR_OCULTAR_DIAS = 60; // não sugere quem já foi contatado nesse período
+
+function msgReativarModelo(){ return (DB.config && DB.config.msgReativar) || MSG_REATIVAR_PADRAO; }
+function contatosDB(){ DB.contatos = DB.contatos || []; return DB.contatos; }
+// Normaliza o telefone para o formato do WhatsApp (55 + DDD + número). Retorna '' se inválido.
+function foneWhats(tel){
+  let d = String(tel||'').replace(/\D/g,'');
+  if(d.startsWith('55') && d.length>=12) d = d.slice(2);
+  if(d.length!==10 && d.length!==11) return '';
+  return '55'+d;
+}
+function ultimoContatoReativar(clienteId){
+  const l = contatosDB().filter(x=>x.clienteId===clienteId).map(x=>x.data).sort();
+  return l.length ? l[l.length-1] : '';
+}
+function mesesDesde(iso){
+  const d = Math.floor((new Date() - new Date(iso+'T12:00:00'))/86400000);
+  const m = Math.floor(d/30.4);
+  return m>=12 ? `${Math.floor(m/12)} ano(s)${m%12?' e '+(m%12)+' mês(es)':''}` : `${m} mês(es)`;
+}
+// Clientes sem atendimento há X meses (e sem OS em andamento / equipamento parado na loja)
+function candidatosReativar(meses, mostrarContatados){
+  const lim = new Date(); lim.setMonth(lim.getMonth()-meses);
+  const limISO = lim.toISOString().slice(0,10);
+  const corteContato = new Date(); corteContato.setDate(corteContato.getDate()-REATIVAR_OCULTAR_DIAS);
+  const corteContatoISO = corteContato.toISOString().slice(0,10);
+  const lista = []; let semFone = 0, jaContatados = 0;
+  DB.clientes.forEach(c=>{
+    if(c.naoContatar) return;
+    const os = DB.ordens.filter(o=>o.clienteId===c.id);
+    if(!os.length) return;
+    if(os.some(o=>!['Entregue','Desistência','Não tem conserto'].includes(o.status))) return;
+    const datas = os.map(o=>o.dataConclusao||o.dataEntrada).filter(Boolean).sort();
+    const ult = datas[datas.length-1];
+    if(!ult || ult > limISO) return;
+    const ultOS = [...os].sort((a,b)=>b.num-a.num)[0];
+    const fone = foneWhats(c.telefone);
+    if(!fone){ semFone++; return; }
+    const uc = ultimoContatoReativar(c.id);
+    if(uc && uc >= corteContatoISO && !mostrarContatados){ jaContatados++; return; }
+    const e = eqp(ultOS.equipId);
+    const serv = (ultOS.servicos||[]).map(s=>s.nome).join(', ') || ultOS.servico || ultOS.defeito || '';
+    lista.push({ c, fone, ult, uc, aparelho: e ? `${e.tipo} ${e.marca}`.trim() : '', serv });
+  });
+  lista.sort((a,b)=>a.ult.localeCompare(b.ult));
+  return { lista, semFone, jaContatados };
+}
+function montarMensagemReativar(c, aparelho){
+  const nome = (c.nome||'').trim().split(/\s+/)[0] || 'tudo bem';
+  const empresa = nomeExibicao() || 'Assistência Técnica';
+  const tel = (DB.config && DB.config.telefone) || '';
+  return msgReativarModelo()
+    .replace(/\{nome\}/g, nome)
+    .replace(/\{empresa\}/g, empresa)
+    .replace(/\{aparelho\}/g, aparelho || 'computador')
+    .replace(/\{telefone\}/g, tel);
+}
+function vReativar(){
+  const meses = window._rvMeses || 6;
+  const mostrar = !!window._rvMostrar;
+  const q = (window._rvQ||'').toLowerCase();
+  const r = candidatosReativar(meses, mostrar);
+  const lista = r.lista.filter(x=>!q || (x.c.nome||'').toLowerCase().includes(q));
+  const optOut = DB.clientes.filter(c=>c.naoContatar);
+  const contatadosMes = contatosDB().filter(x=>x.data && x.data.slice(0,7)===hoje().slice(0,7)).length;
+  return `
+  <div class="spread">
+    <div class="row">
+      <select style="width:auto" onchange="window._rvMeses=Number(this.value);render()">
+        ${[3,6,9,12,18,24].map(m=>`<option value="${m}" ${meses===m?'selected':''}>Sem atendimento há ${m>=12&&m%12===0?(m/12)+' ano(s)':m+' meses'}</option>`).join('')}
+      </select>
+      <input id="busca-reativar" class="search" placeholder="🔍 Buscar cliente…" value="${esc(window._rvQ||'')}" oninput="window._rvQ=this.value;render()">
+    </div>
+    <button class="btn sec" onclick="editarMensagemReativar()">✏ Editar mensagem</button>
+  </div>
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="stat g"><div class="n">${r.lista.length}</div><div class="l">Clientes para contatar</div></div>
+    <div class="stat a"><div class="n">${contatadosMes}</div><div class="l">Contatados neste mês</div></div>
+    <div class="stat"><div class="n">${r.jaContatados}</div><div class="l">Ocultos (contatados há &lt; ${REATIVAR_OCULTAR_DIAS} dias)</div></div>
+    <div class="stat ${r.semFone?'r':''}"><div class="n">${r.semFone}</div><div class="l">Sem telefone válido</div></div>
+  </div>
+  <div class="card">
+    <div class="spread">
+      <h2 style="margin:0">💬 Reativar clientes</h2>
+      <label class="check-item"><input type="checkbox" ${mostrar?'checked':''} onchange="window._rvMostrar=this.checked;render()"> Mostrar também quem já foi contatado recentemente</label>
+    </div>
+    <p class="hint" style="margin:6px 0 12px">Clientes cujo último atendimento foi há ${meses>=12&&meses%12===0?(meses/12)+' ano(s)':meses+' meses'} ou mais. Cada botão abre o WhatsApp com a mensagem pronta — você só aperta enviar. Envie aos poucos (ex.: 10 a 15 por dia) para evitar bloqueio do número.</p>
+    ${lista.length ? `<table><thead><tr><th>Cliente</th><th>Último atendimento</th><th>Aparelho / serviço</th><th>Último contato</th><th></th></tr></thead><tbody>
+    ${lista.map(x=>`<tr>
+      <td><b>${esc(x.c.nome)}</b><div class="hint">${esc(x.c.telefone||'')}</div></td>
+      <td>${fdate(x.ult)}<div class="hint">há ${mesesDesde(x.ult)}</div></td>
+      <td>${esc(x.aparelho||'—')}<div class="hint">${esc(x.serv)}</div></td>
+      <td>${x.uc?fdate(x.uc):'<span class="hint">nunca</span>'}</td>
+      <td class="right" style="white-space:nowrap">
+        <button class="btn sm" style="background:#25d366" onclick="enviarReativar('${x.c.id}')">💬 Enviar</button>
+        <button class="btn sec sm" title="Marcar como contatado sem enviar" onclick="marcarContatado('${x.c.id}')">✔ Contatei</button>
+        <button class="btn warn sm" title="Nunca mais sugerir este cliente" onclick="naoContatarCliente('${x.c.id}',true)">🚫</button>
+      </td></tr>`).join('')}
+    </tbody></table>` : `<div class="empty">${r.lista.length? 'Nenhum cliente encontrado na busca.' : 'Nenhum cliente para contatar com esse filtro. 👍'}</div>`}
+  </div>
+  ${optOut.length ? `<div class="card">
+    <h2>🚫 Não contatar (${optOut.length})</h2>
+    ${optOut.map(c=>`<div class="spread" style="margin:4px 0"><span>${esc(c.nome)} <span class="hint">${esc(c.telefone||'')}</span></span>
+      <button class="btn sec sm" onclick="naoContatarCliente('${c.id}',false)">Voltar a sugerir</button></div>`).join('')}
+  </div>` : ''}`;
+}
+async function registrarContatoReativar(clienteId){
+  contatosDB().push({ id:uid(), clienteId, data:hoje(), tipo:'reativacao' });
+  await save(); render();
+}
+function enviarReativar(clienteId){
+  const c = cli(clienteId); if(!c) return;
+  const fone = foneWhats(c.telefone);
+  if(!fone) return alert('Este cliente não tem um telefone válido cadastrado.');
+  const os = DB.ordens.filter(o=>o.clienteId===clienteId).sort((a,b)=>b.num-a.num)[0];
+  const e = os ? eqp(os.equipId) : null;
+  const msg = montarMensagemReativar(c, e ? `${e.tipo} ${e.marca}`.trim() : '');
+  window.open(`https://wa.me/${fone}?text=${encodeURIComponent(msg)}`, '_blank'); // abre antes de qualquer await (evita bloqueio de pop-up)
+  registrarContatoReativar(clienteId);
+}
+async function marcarContatado(clienteId){ await registrarContatoReativar(clienteId); }
+async function naoContatarCliente(clienteId, valor){
+  const c = cli(clienteId); if(!c) return;
+  if(valor && !confirm(`Nunca mais sugerir ${c.nome} nesta lista? (Dá para desfazer no fim da página.)`)) return;
+  c.naoContatar = valor;
+  await save(); render();
+}
+function editarMensagemReativar(){
+  openModal(`<h3>✏ Mensagem de reativação</h3>
+  <p class="hint" style="margin-bottom:8px">Variáveis: <b>{nome}</b> (primeiro nome), <b>{aparelho}</b>, <b>{empresa}</b>, <b>{telefone}</b>. Sugestão: mantenha a frase "responda SAIR" para quem não quiser receber.</p>
+  <textarea id="rv-tpl" rows="7" oninput="previewMensagemReativar()">${esc(msgReativarModelo())}</textarea>
+  <label style="margin-top:10px">Prévia (exemplo)</label>
+  <div id="rv-prev" style="background:var(--green-soft);border-radius:8px;padding:10px;font-size:13.5px;white-space:pre-line"></div>
+  <div class="actions">
+    <button class="btn sec" onclick="document.getElementById('rv-tpl').value=MSG_REATIVAR_PADRAO;previewMensagemReativar()">↺ Restaurar padrão</button>
+    <button class="btn sec" onclick="closeModal()">Cancelar</button>
+    <button class="btn" onclick="salvarMensagemReativar()">Salvar</button>
+  </div>`);
+  previewMensagemReativar();
+}
+function previewMensagemReativar(){
+  const tpl = document.getElementById('rv-tpl')?.value || '';
+  const empresa = nomeExibicao() || 'Assistência Técnica';
+  const tel = (DB.config && DB.config.telefone) || '';
+  const el = document.getElementById('rv-prev');
+  if(el) el.textContent = tpl.replace(/\{nome\}/g,'Maria').replace(/\{empresa\}/g,empresa).replace(/\{aparelho\}/g,'Notebook Dell').replace(/\{telefone\}/g,tel);
+}
+async function salvarMensagemReativar(){
+  const t = document.getElementById('rv-tpl').value.trim();
+  if(!t) return alert('A mensagem não pode ficar vazia.');
+  DB.config = DB.config || {};
+  DB.config.msgReativar = t;
+  await save(); closeModal(); render();
+}
 
 /* ================= EQUIPAMENTOS ================= */
 function vEquip(){
@@ -3854,7 +4016,7 @@ function qrDataURL(payload, cb){
 /* ================= INICIALIZAÇÃO ================= */
 document.getElementById('hoje').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 // Versão do programa — serve para conferir se a versão publicada é a mais recente (evita confusão com cache)
-const VERSAO_APP = 'v02.10.26-a';
+const VERSAO_APP = 'v09.10.26-a';
 document.getElementById('versao-app').textContent = '· ' + VERSAO_APP;
 
 // Restaura preferência de visualização (só simula no PC; celular já é responsivo)
