@@ -1522,7 +1522,7 @@ function montarMensagemReativar(c, aparelho){
     .replace(/\{telefone\}/g, tel);
 }
 function vReativar(){
-  const meses = window._rvMeses || 6;
+  const meses = window._rvMeses || 2;
   const mostrar = !!window._rvMostrar;
   const q = (window._rvQ||'').toLowerCase();
   const r = candidatosReativar(meses, mostrar);
@@ -1533,7 +1533,7 @@ function vReativar(){
   <div class="spread">
     <div class="row">
       <select style="width:auto" onchange="window._rvMeses=Number(this.value);render()">
-        ${[3,6,9,12,18,24].map(m=>`<option value="${m}" ${meses===m?'selected':''}>Sem atendimento há ${m>=12&&m%12===0?(m/12)+' ano(s)':m+' meses'}</option>`).join('')}
+        ${[1,2,3,6,9,12,18,24].map(m=>`<option value="${m}" ${meses===m?'selected':''}>Sem atendimento há ${m>=12&&m%12===0?(m/12)+' ano(s)':m+' meses'}</option>`).join('')}
       </select>
       <input id="busca-reativar" class="search" placeholder="🔍 Buscar cliente…" value="${esc(window._rvQ||'')}" oninput="window._rvQ=this.value;render()">
     </div>
@@ -4016,7 +4016,7 @@ function qrDataURL(payload, cb){
 /* ================= INICIALIZAÇÃO ================= */
 document.getElementById('hoje').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 // Versão do programa — serve para conferir se a versão publicada é a mais recente (evita confusão com cache)
-const VERSAO_APP = 'v09.10.26-a';
+const VERSAO_APP = 'v09.10.26-b';
 document.getElementById('versao-app').textContent = '· ' + VERSAO_APP;
 
 // Restaura preferência de visualização (só simula no PC; celular já é responsivo)
